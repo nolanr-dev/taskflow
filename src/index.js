@@ -49,10 +49,21 @@ app.use(express.json({ limit: '10kb' }));
 
 // Input validation middleware
 const validateTaskInput = (req, res, next) => {
-  const { title } = req.body;
+  const { title, dueDate } = req.body;
 
   if (!title || typeof title !== 'string') {
     return res.status(400).json({ error: 'Title is required and must be a string' });
+  }
+
+  if (dueDate !== undefined) {
+    const parsed = new Date(dueDate);
+    if (isNaN(parsed.getTime()) || !dueDate.includes('T')) {
+      return res.status(400).json({ error: 'dueDate must be a valid ISO datetime (e.g. 2026-05-01T17:00:00.000Z)' });                        
+    } 
+    if (parsed <= new Date()) {
+      return res.status(400).json({ error: 'dueDate must be in the future' });
+    }
+    req.body.dueDate = parsed.toISOString();
   }
 
   if (title.trim().length === 0 || title.length > 500) {
@@ -66,7 +77,7 @@ const validateTaskInput = (req, res, next) => {
 
 // Sanitize update data
 const sanitizeUpdateData = (updates) => {
-  const allowedFields = ['title', 'completed'];
+  const allowedFields = ['title', 'completed', 'dueDate'];
   const sanitized = {};
 
   for (const key of Object.keys(updates)) {
@@ -75,6 +86,11 @@ const sanitizeUpdateData = (updates) => {
         sanitized[key] = updates[key].trim().substring(0, 500);
       } else if (key === 'completed' && typeof updates[key] === 'boolean') {
         sanitized[key] = updates[key];
+      } else if (key === 'dueDate') {
+        const parsed = new Date(updates[key]);
+        if (!isNaN(parsed.getTime())) {
+          sanitized[key] = parsed.toISOString();
+        }
       }
     }
   }
@@ -82,13 +98,38 @@ const sanitizeUpdateData = (updates) => {
   return sanitized;
 };
 
+const toParisISOString = (date) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZoneName: 'shortOffset'
+  }).formatToParts(date);
+
+  const get = (type) => parts.find(p => p.type === type)?.value ?? '';
+  const rawOffset = get('timeZoneName').replace('GMT', '') || '+0';
+  const [oh, om = '0'] = rawOffset.replace(/^[+-]/, '').split(':');
+  const sign = rawOffset.startsWith('-') ? '-' : '+';
+  const offset = `${sign}${oh.padStart(2, '0')}:${om.padStart(2, '0')}`;
+
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}${offset}`;
+};
+
 const formatTaskData = (doc) => {
   const data = doc.data();
+  const createdAtDate = data.createdAt?.toDate?.();
+  const dueDateDate = data.dueDate ? new Date(data.dueDate) : null;
   return {
     id: doc.id,
     title: data.title,
     completed: data.completed,
-    createdAt: data.createdAt?.toDate?.() ? data.createdAt.toDate().toISOString() : data.createdAt
+    dueDate: dueDateDate ? toParisISOString(dueDateDate) : null,
+    createdAt: createdAtDate ? toParisISOString(createdAtDate) : data.createdAt
   };
 };
 
@@ -124,13 +165,14 @@ app.get('/tasks', async (req, res) => {
 
 app.post('/tasks', validateTaskInput, async (req, res) => {
   try {
-    const { title } = req.body;
+    const { title, dueDate } = req.body;
 
     const taskRef = db.collection('tasks').doc();
     const task = {
       id: taskRef.id,
       title,
       completed: false,
+      dueDate: dueDate || null,   // ← ajouter ça
       createdAt: FieldValue.serverTimestamp()
     };
 
