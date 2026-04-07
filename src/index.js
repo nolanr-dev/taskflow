@@ -55,7 +55,7 @@ const validateTaskInput = (req, res, next) => {
     return res.status(400).json({ error: 'Title is required and must be a string' });
   }
 
-  if (dueDate !== undefined) {
+  if (dueDate !== undefined && dueDate !== null) {
     const parsed = new Date(dueDate);
     if (isNaN(parsed.getTime()) || !dueDate.includes('T')) {
       return res.status(400).json({ error: 'dueDate must be a valid ISO datetime (e.g. 2026-05-01T17:00:00.000Z)' });                        
@@ -87,9 +87,13 @@ const sanitizeUpdateData = (updates) => {
       } else if (key === 'completed' && typeof updates[key] === 'boolean') {
         sanitized[key] = updates[key];
       } else if (key === 'dueDate') {
-        const parsed = new Date(updates[key]);
-        if (!isNaN(parsed.getTime())) {
-          sanitized[key] = parsed.toISOString();
+        if (updates[key] === null) {
+          sanitized[key] = null;
+        } else {
+          const parsed = new Date(updates[key]);
+          if (!isNaN(parsed.getTime())) {
+            sanitized[key] = parsed.toISOString();
+          }
         }
       }
     }
