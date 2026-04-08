@@ -48,8 +48,14 @@ app.use(limiter);
 app.use(express.json({ limit: '10kb' }));
 
 // Input validation middleware
+const HEX_COLOR_RE = /^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/;
+
 const validateTaskInput = (req, res, next) => {
-  const { title, description, dueDate } = req.body;
+  const { title, description, dueDate, color } = req.body;
+
+  if (color !== undefined && color !== null && (typeof color !== 'string' || !HEX_COLOR_RE.test(color))) {
+    return res.status(400).json({ error: 'color must be a valid hex color (e.g. #FF8800)' });
+  }
 
   if (!title || typeof title !== 'string') {
     return res.status(400).json({ error: 'Title is required and must be a string' });
@@ -82,7 +88,7 @@ const validateTaskInput = (req, res, next) => {
 
 // Sanitize update data
 const sanitizeUpdateData = (updates) => {
-  const allowedFields = ['title', 'description', 'completed', 'dueDate'];
+  const allowedFields = ['title', 'description', 'completed', 'dueDate', 'color'];
   const sanitized = {};
 
   for (const key of Object.keys(updates)) {
@@ -102,6 +108,12 @@ const sanitizeUpdateData = (updates) => {
         }
       } else if (key === 'description' && typeof updates[key] === 'string') {
         sanitized[key] = updates[key].trim()
+      } else if (key === 'color') {
+        if (updates[key] === null) {
+          sanitized[key] = null;
+        } else if (typeof updates[key] === 'string' && HEX_COLOR_RE.test(updates[key])) {
+          sanitized[key] = updates[key];
+        }
       }
     }
   }
@@ -141,6 +153,7 @@ const formatTaskData = (doc) => {
     description: data.description,
     completed: data.completed,
     dueDate: dueDateDate ? toParisISOString(dueDateDate) : null,
+    color: data.color ?? null,
     createdAt: createdAtDate ? toParisISOString(createdAtDate) : data.createdAt
   };
 };
@@ -177,7 +190,7 @@ app.get('/tasks', async (req, res) => {
 
 app.post('/tasks', validateTaskInput, async (req, res) => {
   try {
-    const { title, description, dueDate } = req.body;
+    const { title, description, dueDate, color } = req.body;
 
     const taskRef = db.collection('tasks').doc();
     const task = {
@@ -185,7 +198,8 @@ app.post('/tasks', validateTaskInput, async (req, res) => {
       title,
       description,
       completed: false,
-      dueDate: dueDate || null,   // ← ajouter ça
+      dueDate: dueDate || null,
+      color: color || null,
       createdAt: FieldValue.serverTimestamp()
     };
 
