@@ -49,17 +49,21 @@ app.use(express.json({ limit: '10kb' }));
 
 // Input validation middleware
 const validateTaskInput = (req, res, next) => {
-  const { title, dueDate } = req.body;
+  const { title, description, dueDate } = req.body;
 
   if (!title || typeof title !== 'string') {
     return res.status(400).json({ error: 'Title is required and must be a string' });
   }
 
+  if (typeof description !== 'string') {
+    return res.status(400).json({ error: 'Description is required and must be a string' });
+  }
+
   if (dueDate !== undefined && dueDate !== null) {
     const parsed = new Date(dueDate);
     if (isNaN(parsed.getTime()) || !dueDate.includes('T')) {
-      return res.status(400).json({ error: 'dueDate must be a valid ISO datetime (e.g. 2026-05-01T17:00:00.000Z)' });                        
-    } 
+      return res.status(400).json({ error: 'dueDate must be a valid ISO datetime (e.g. 2026-05-01T17:00:00.000Z)' });
+    }
     if (parsed <= new Date()) {
       return res.status(400).json({ error: 'dueDate must be in the future' });
     }
@@ -72,12 +76,13 @@ const validateTaskInput = (req, res, next) => {
 
   // Sanitize title
   req.body.title = title.trim();
+  req.body.description = description.trim();
   next();
 };
 
 // Sanitize update data
 const sanitizeUpdateData = (updates) => {
-  const allowedFields = ['title', 'completed', 'dueDate'];
+  const allowedFields = ['title', 'description', 'completed', 'dueDate'];
   const sanitized = {};
 
   for (const key of Object.keys(updates)) {
@@ -95,6 +100,8 @@ const sanitizeUpdateData = (updates) => {
             sanitized[key] = parsed.toISOString();
           }
         }
+      } else if (key === 'description' && typeof updates[key] === 'string') {
+        sanitized[key] = updates[key].trim()
       }
     }
   }
@@ -131,6 +138,7 @@ const formatTaskData = (doc) => {
   return {
     id: doc.id,
     title: data.title,
+    description: data.description,
     completed: data.completed,
     dueDate: dueDateDate ? toParisISOString(dueDateDate) : null,
     createdAt: createdAtDate ? toParisISOString(createdAtDate) : data.createdAt
@@ -169,12 +177,13 @@ app.get('/tasks', async (req, res) => {
 
 app.post('/tasks', validateTaskInput, async (req, res) => {
   try {
-    const { title, dueDate } = req.body;
+    const { title, description, dueDate } = req.body;
 
     const taskRef = db.collection('tasks').doc();
     const task = {
       id: taskRef.id,
       title,
+      description,
       completed: false,
       dueDate: dueDate || null,   // ← ajouter ça
       createdAt: FieldValue.serverTimestamp()
